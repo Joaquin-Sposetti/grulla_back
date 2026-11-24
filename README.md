@@ -91,6 +91,31 @@ Ver [AI_Y_DESPLIEGUE.md](AI_Y_DESPLIEGUE.md) para usar y reiniciar la IA local. 
 
 ## Administrador y cuentas profesionales
 
+### Crear el primer administrador sin SSH
+
+El backend usa SQLite. En Railway, conectar un volumen con montaje `/data` y definir
+`GRULLA_DATA_DIR=/data` para guardar la base en `/data/grulla.sqlite` entre despliegues.
+No subir la base local ni contraseñas al repositorio.
+
+Después de subir esta versión, agregar juntas en las Variables del servicio Railway:
+
+- `GRULLA_INITIAL_ADMIN_NAME`: nombre del administrador.
+- `GRULLA_INITIAL_ADMIN_EMAIL`: correo para ingresar.
+- `GRULLA_INITIAL_ADMIN_PASSWORD`: contraseña privada de 10 a 500 caracteres.
+
+Aplicar los cambios y desplegar. El administrador se crea al iniciar el backend, cuando
+el volumen ya está montado. No usar un comando de build o pre-deploy para este paso.
+Entrar al panel con esos datos y luego eliminar las tres variables iniciales y aplicar
+los cambios. Conservar `GRULLA_DATA_DIR`, el volumen y las demás variables de configuración.
+El usuario queda en la base y la contraseña se guarda como hash PBKDF2.
+
+Si ya existe un administrador, no cambia su correo ni contraseña ni crea otro. Si el
+correo elegido pertenece a una profesional, informa el conflicto sin convertir ni
+sobrescribir esa cuenta: elegir otro correo. Una configuración inicial incompleta o
+inválida detiene el arranque con un mensaje explicativo, sin imprimir la contraseña.
+
+### Crear el administrador por SSH y administrar profesionales
+
 El panel distingue entre una única cuenta administradora y las cuentas profesionales.
 Las instalaciones existentes se migran automáticamente, conservando usuarios, contraseñas,
 pacientes y sesiones. Las cuentas anteriores mantienen el rol profesional.

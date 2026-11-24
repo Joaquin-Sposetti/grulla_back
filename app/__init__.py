@@ -421,6 +421,7 @@ def create_app(test_config=None):
             db().commit()
             click.echo('Cuenta creada: ' + email)
 
-    from .accounts import register_accounts
+    from .accounts import initialize_admin, register_accounts
+    initialize_admin(app, db)
     register_accounts(app, db, administrator, json_data)
     return app

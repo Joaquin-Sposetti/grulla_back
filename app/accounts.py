@@ -1,4 +1,5 @@
 """Account administration; clinical records remain assigned to their owner."""
+import os
 import sqlite3
 import click
 from flask import jsonify
@@ -21,6 +22,35 @@ def password_hash(password):
     if not isinstance(password, str) or not 10 <= len(password) <= 500:
         raise ValueError('La contraseña debe tener entre 10 y 500 caracteres.')
     return generate_password_hash(password, method='pbkdf2:sha256')
+
+
+def initialize_admin(app, db):
+    """Bootstrap once at runtime on the mounted database; never reset an account."""
+    keys = ('GRULLA_INITIAL_ADMIN_NAME', 'GRULLA_INITIAL_ADMIN_EMAIL', 'GRULLA_INITIAL_ADMIN_PASSWORD')
+    values = [os.environ.get(key) for key in keys]
+    if not any(value is not None for value in values):
+        return
+    with app.app_context():
+        conn = db()
+        # Serialize the existence check and insertion if two processes start together.
+        conn.execute('BEGIN IMMEDIATE')
+        try:
+            if conn.execute("SELECT id FROM professionals WHERE role='admin'").fetchone():
+                conn.rollback()
+                app.logger.info('Administrador existente: inicialización omitida, sin cambiar credenciales.')
+                return
+            if not all(values):
+                raise ValueError('Completá GRULLA_INITIAL_ADMIN_NAME, GRULLA_INITIAL_ADMIN_EMAIL y GRULLA_INITIAL_ADMIN_PASSWORD en Railway.')
+            name, email = identity({'name': values[0], 'email': values[1]})
+            hashed = password_hash(values[2])
+            if conn.execute('SELECT id FROM professionals WHERE email=?', (email,)).fetchone():
+                raise ValueError('El correo inicial ya pertenece a una cuenta profesional. Elegí otro correo para el administrador.')
+            conn.execute("INSERT INTO professionals(name,email,password,role) VALUES(?,?,?,'admin')", (name,email,hashed))
+            conn.commit()
+            app.logger.info('Administrador inicial creado. Ya podés eliminar las tres variables GRULLA_INITIAL_ADMIN de Railway.')
+        except (ValueError, sqlite3.Error) as error:
+            conn.rollback()
+            raise RuntimeError('No se pudo inicializar el administrador: ' + str(error)) from error
 
 
 def register_accounts(app, db, administrator, json_data):
