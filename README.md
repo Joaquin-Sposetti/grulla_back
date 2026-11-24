@@ -87,3 +87,33 @@ Al pasar la hora de inicio **más la duración** de una sesión que sigue progra
 El botón **Pedir sugerencia** prepara ideas para conversar a partir del historial. Utiliza Qwen3-4B mediante un servicio local: no necesita claves y no envía anotaciones a proveedores externos. Requiere tener iniciado `scripts/run_local_ai.py`. Las ideas se revisan antes de agregarlas a los temas.
 
 Ver [AI_Y_DESPLIEGUE.md](AI_Y_DESPLIEGUE.md) para usar y reiniciar la IA local. La publicación queda pendiente de solicitud.
+
+
+## Administrador y cuentas profesionales
+
+El panel distingue entre una única cuenta administradora y las cuentas profesionales.
+Las instalaciones existentes se migran automáticamente, conservando usuarios, contraseñas,
+pacientes y sesiones. Las cuentas anteriores mantienen el rol profesional.
+
+Después de desplegar el backend en Railway y el frontend en Netlify, conectarse por SSH
+al servicio del backend y ejecutar una sola vez:
+
+```sh
+python -m flask --app app create-admin
+```
+
+El comando pide nombre, correo y contraseña con confirmación. Si el correo ya existe,
+pide confirmación explícita para convertir esa cuenta en administradora y cambiar su
+contraseña. Si ya existe un administrador, termina sin modificarlo. No hay contraseñas
+predeterminadas ni registro público de administradores.
+
+Al ingresar al panel, el administrador puede crear profesionales, editar nombre y correo,
+restablecer contraseñas y activar o desactivar cuentas. Las cuentas profesionales solo
+pueden consultar sus propios pacientes y sesiones. La administración de cuentas no
+incluye acceso a las historias clúnicas de otras profesionales.
+
+Desactivar conserva todos los datos y revoca el acceso, incluso de sesiones abiertas.
+Cambiar contraseña o correo también invalida las sesiones anteriores. Las contraseñas
+requieren entre 10 y 500 caracteres y se guardan como hashes PBKDF2. El panel no permite
+crear otro administrador ni desactivar al administrador actual. Para retirar las cuentas
+de prueba, desactivarlas desde el panel de administración.

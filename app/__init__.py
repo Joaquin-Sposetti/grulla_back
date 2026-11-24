@@ -64,6 +64,15 @@ def create_app(test_config=None):
         CREATE TABLE IF NOT EXISTS ai_usage(professional_id INTEGER PRIMARY KEY REFERENCES professionals(id), last_requested REAL NOT NULL);
         CREATE TABLE IF NOT EXISTS login_attempts(key TEXT PRIMARY KEY, count INTEGER NOT NULL, reset_at REAL NOT NULL);
         ''')
+        account_columns = {row['name'] for row in db().execute('PRAGMA table_info(professionals)')}
+        for column, definition in (
+            ('role', "TEXT NOT NULL DEFAULT 'professional'"),
+            ('active', 'INTEGER NOT NULL DEFAULT 1'),
+            ('session_version', 'INTEGER NOT NULL DEFAULT 0'),
+        ):
+            if column not in account_columns:
+                db().execute(f'ALTER TABLE professionals ADD COLUMN {column} {definition}')
+        db().execute("CREATE UNIQUE INDEX IF NOT EXISTS single_admin ON professionals(role) WHERE role='admin'")
         appointment_columns = {row['name'] for row in db().execute('PRAGMA table_info(appointments)')}
         if 'follow_up_reminder' not in appointment_columns:
             db().execute("ALTER TABLE appointments ADD COLUMN follow_up_reminder TEXT NOT NULL DEFAULT ''")
@@ -112,6 +121,20 @@ def create_app(test_config=None):
         def wrapped(*args, **kwargs):
             if not session.get('user_id'):
                 return jsonify(error='Iniciá sesión para continuar.'), 401
+            account = db().execute('SELECT * FROM professionals WHERE id=?', (session['user_id'],)).fetchone()
+            if not account or not account['active'] or session.get('version', 0) != account['session_version']:
+                session.clear()
+                return jsonify(error='Tu sesión terminó. Volvé a iniciar sesión.'), 401
+            g.account = account
+            return fn(*args, **kwargs)
+        return wrapped
+
+    def administrator(fn):
+        @authenticated
+        @wraps(fn)
+        def wrapped(*args, **kwargs):
+            if g.account['role'] != 'admin':
+                return jsonify(error='Se requiere una cuenta administradora.'), 403
             return fn(*args, **kwargs)
         return wrapped
 
@@ -152,7 +175,7 @@ def create_app(test_config=None):
         password = data.get('password', '')
         if not isinstance(password, str) or len(password) > 500:
             raise ValueError('Contraseña inválida.')
-        if not user or not check_password_hash(user['password'], password):
+        if not user or not user['active'] or not check_password_hash(user['password'], password):
             count = attempt['count'] + 1 if attempt and attempt['reset_at'] > now else 1
             db().execute('INSERT OR REPLACE INTO login_attempts VALUES(?,?,?)', (key, count, now + 900))
             db().commit()
@@ -161,13 +184,13 @@ def create_app(test_config=None):
         db().commit()
         session.clear()
         session.permanent = True
-        session.update(user_id=user['id'], csrf=secrets.token_hex(32))
-        return jsonify(user=dict(id=user['id'], name=user['name'], email=user['email']), csrf=session['csrf'], timezone=app.config['TIMEZONE'])
+        session.update(user_id=user['id'], version=user['session_version'], csrf=secrets.token_hex(32))
+        return jsonify(user=dict(id=user['id'], name=user['name'], email=user['email'], role=user['role']), csrf=session['csrf'], timezone=app.config['TIMEZONE'])
 
     @app.get('/api/me')
     @authenticated
     def me():
-        user = db().execute('SELECT id,name,email FROM professionals WHERE id=?', (session['user_id'],)).fetchone()
+        user = db().execute('SELECT id,name,email,role FROM professionals WHERE id=?', (session['user_id'],)).fetchone()
         return jsonify(user=dict(user), csrf=session['csrf'], timezone=app.config['TIMEZONE'])
 
     @app.post('/api/logout')
@@ -383,6 +406,9 @@ def create_app(test_config=None):
     def create_users():
         """Create the two professional accounts, prompting for passwords."""
         import click
+        if db().execute("SELECT id FROM professionals WHERE role='admin'").fetchone():
+            click.echo('Creá las cuentas profesionales desde el panel del administrador.')
+            return
         for uid, name, default_email in ((1, 'Liliana Ugolini', 'liliana@grulla.local'), (2, 'Sofía Sposetti', 'sofia@grulla.local')):
             if db().execute('SELECT id FROM professionals WHERE id=?', (uid,)).fetchone():
                 click.echo(name + ': la cuenta ya existe.')
@@ -391,8 +417,10 @@ def create_app(test_config=None):
             password = click.prompt('Contraseña (mínimo 10 caracteres)', hide_input=True, confirmation_prompt=True)
             if len(password) < 10:
                 raise click.ClickException('La contraseña debe tener al menos 10 caracteres.')
-            db().execute('INSERT INTO professionals VALUES(?,?,?,?)', (uid, email, name, generate_password_hash(password, method='pbkdf2:sha256')))
+            db().execute('INSERT INTO professionals(id,email,name,password) VALUES(?,?,?,?)', (uid, email, name, generate_password_hash(password, method='pbkdf2:sha256')))
             db().commit()
             click.echo('Cuenta creada: ' + email)
 
+    from .accounts import register_accounts
+    register_accounts(app, db, administrator, json_data)
     return app

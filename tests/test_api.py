@@ -14,7 +14,7 @@ class ApiTests(unittest.TestCase):
             import sqlite3
             conn = sqlite3.connect(self.app.config['DATABASE'])
             for uid in (1,2):
-                conn.execute('INSERT INTO professionals VALUES(?,?,?,?)',(uid,f'{uid}@test.local',f'Professional {uid}',generate_password_hash('secure-password',method='pbkdf2:sha256')))
+                conn.execute('INSERT INTO professionals(id,email,name,password) VALUES(?,?,?,?)',(uid,f'{uid}@test.local',f'Professional {uid}',generate_password_hash('secure-password',method='pbkdf2:sha256')))
             conn.commit(); conn.close()
         self.a = self.app.test_client(); self.b = self.app.test_client()
         self.ha = self.login(self.a,1); self.hb = self.login(self.b,2)

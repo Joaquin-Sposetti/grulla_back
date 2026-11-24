@@ -19,7 +19,7 @@ class SuggestionTests(unittest.TestCase):
         cls.app = create_app({'TESTING': True, 'SECRET_KEY': 'test',
                               'DATABASE': str(Path(cls.tmp.name) / 'test.sqlite'), 'OPENROUTER_API_KEY': 'test-key', 'AI_PROVIDER':'openrouter', 'AI_MODEL':'openrouter/free'})
         conn = sqlite3.connect(cls.app.config['DATABASE'])
-        conn.executemany('INSERT INTO professionals VALUES(?,?,?,?)', [(1,'one@test','One','unused'),(2,'two@test','Two','unused')])
+        conn.executemany('INSERT INTO professionals(id,email,name,password) VALUES(?,?,?,?)', [(1,'one@test','One','unused'),(2,'two@test','Two','unused')])
         conn.commit();conn.close()
 
     @classmethod
