@@ -28,6 +28,7 @@ def create_app(test_config=None):
                       SESSION_COOKIE_SECURE=os.getenv('GRULLA_SECURE_COOKIES', '0') == '1',
                       PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
                       FRONTEND_ORIGIN=os.getenv('FRONTEND_ORIGIN', 'http://localhost:8000').rstrip('/'),
+                      FRONTEND_ORIGINS=os.getenv('FRONTEND_ORIGINS', ''),
                       AI_PROVIDER=os.getenv('GRULLA_AI_PROVIDER', 'local'),
                       OPENROUTER_API_KEY=os.getenv('OPENROUTER_API_KEY', ''),
                       LOCAL_AI_URL=os.getenv('GRULLA_LOCAL_AI_URL', 'http://127.0.0.1:8081'),
@@ -35,6 +36,11 @@ def create_app(test_config=None):
                       TIMEZONE=os.getenv('GRULLA_TIMEZONE', 'America/Argentina/Cordoba'), MAX_CONTENT_LENGTH=100_000)
     if test_config:
         app.config.update(test_config)
+    allowed_origins = {
+        origin.strip().rstrip('/')
+        for origin in (app.config['FRONTEND_ORIGINS'] or app.config['FRONTEND_ORIGIN']).split(',')
+        if origin.strip()
+    }
 
     def db():
         if 'db' not in g:
@@ -81,7 +87,7 @@ def create_app(test_config=None):
             return '', 204
         if request.method in ('POST', 'PUT', 'DELETE', 'PATCH'):
             origin = request.headers.get('Origin')
-            if origin and origin != app.config['FRONTEND_ORIGIN']:
+            if origin and origin not in allowed_origins:
                 return jsonify(error='Origen no permitido.'), 403
             if request.path != '/api/login' and session.get('user_id'):
                 if not secrets.compare_digest(request.headers.get('X-CSRF-Token', ''), session.get('csrf', '')):
@@ -89,13 +95,14 @@ def create_app(test_config=None):
 
     @app.after_request
     def headers(response):
-        if request.headers.get('Origin') == app.config['FRONTEND_ORIGIN']:
-            response.headers['Access-Control-Allow-Origin'] = app.config['FRONTEND_ORIGIN']
+        origin = request.headers.get('Origin')
+        response.vary.add('Origin')
+        if origin in allowed_origins:
+            response.headers['Access-Control-Allow-Origin'] = origin
             response.headers['Access-Control-Allow-Credentials'] = 'true'
             response.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-CSRF-Token'
             response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
             response.headers['Access-Control-Expose-Headers'] = 'X-Reminder-Window-Start, X-Reminder-Window-End'
-            response.headers['Vary'] = 'Origin'
         response.headers['Cache-Control'] = 'no-store'
         response.headers['X-Content-Type-Options'] = 'nosniff'
         return response
